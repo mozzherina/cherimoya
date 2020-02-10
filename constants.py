@@ -10,6 +10,9 @@ TIMEFRAME_HOUR = 'H'
 TIMEFRAME_DAY = 'D'
 TIMEFRAME_MONTH = 'M'
 
+FINAM_DATETIME = '%Y%m%d%H%M%S'
+AV_DATETIME = '%Y-%m-%d %H:%M:%S'
+
 Direction = str
 DIRECTION_EXIT = 'EXIT'
 DIRECTION_LONG = 'LONG'
@@ -19,3 +22,8 @@ Mode = str
 MODE_ALL = 'all'
 MODE_LONGS = 'longs'
 MODE_SHORTS = 'shorts'
+
+Signal = int
+SIGNAL_LONG = 1
+SIGNAL_SHORT = -1
+SIGNAL_EXIT = 0
