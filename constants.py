@@ -2,6 +2,7 @@ import pandas as pd
 
 tpSeries = pd.core.series.Series
 tpFrame = pd.core.frame.DataFrame
+tpDateTime = pd.Timestamp
 
 Timeframe = str
 TIMEFRAME_MIN5 = '5T'
