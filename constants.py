@@ -13,6 +13,8 @@ TIMEFRAME_MONTH = 'M'
 
 FINAM_DATETIME = '%Y%m%d%H%M%S'
 AV_DATETIME = '%Y-%m-%d %H:%M:%S'
+STD_DATE = '%Y-%m-%d'
+STD_DATETIME = '%Y-%m-%d %H:%M'
 
 Direction = str
 DIRECTION_EXIT = 'EXIT'
@@ -28,3 +30,10 @@ Signal = int
 SIGNAL_LONG = 1
 SIGNAL_SHORT = -1
 SIGNAL_EXIT = 0
+
+Event = str
+EVENT_MARKET = 'MARKET'
+
+BAR_SIZE = 5
+MARKER_SIZE = 15
+FIGURE_SIZE = (15, 11)
