@@ -1,8 +1,10 @@
 import pandas as pd
+from typing import Callable
 
 tpSeries = pd.core.series.Series
 tpFrame = pd.core.frame.DataFrame
 tpDateTime = pd.Timestamp
+tpIndicator = Callable[[tpSeries], tpSeries]
 
 Timeframe = str
 TIMEFRAME_MIN5 = '5T'
