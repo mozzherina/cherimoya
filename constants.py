@@ -1,10 +1,11 @@
 import pandas as pd
-from typing import Callable
+from typing import Callable, Union
 
 tpSeries = pd.core.series.Series
 tpFrame = pd.core.frame.DataFrame
 tpDateTime = pd.Timestamp
 tpIndicator = Callable[[tpSeries], tpSeries]
+tpPolicy = Callable[..., Union[tpSeries, tpFrame]]
 
 Timeframe = str
 TIMEFRAME_MIN5 = '5T'
