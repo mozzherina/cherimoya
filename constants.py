@@ -29,7 +29,7 @@ MODE_ALL = 'all'
 MODE_LONGS = 'longs'
 MODE_SHORTS = 'shorts'
 
-Signal = int
+Signal = Union[int, float]
 SIGNAL_LONG = 1
 SIGNAL_SHORT = -1
 SIGNAL_EXIT = 0
