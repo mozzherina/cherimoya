@@ -168,18 +168,22 @@ class StrategyFrame(ABC):
     
     def __init__(self, long: tpSeries = None, short: tpSeries = None, 
                  exLong: Union[tpSeries, tpFrame, partial] = None, 
-                 exShort: Union[tpSeries, tpFrame, partial] = None) -> None:
+                 exShort: Union[tpSeries, tpFrame, partial] = None, 
+                 enter_on_next: bool = False) -> None:
         """
         long - Series for entering longs
         short - Series for entering shorts
         exLong - Series or Frame for exiting longs
         exShort - Series or Frame for exiting shorts    
+        enter_on_next - if True, cannot enter on the same bar with exit, 
+                        only on the next one
         """
         
         self._long = long
         self._short = short
         self._exLong = exLong
         self._exShort = exShort
+        self._onNext = 1 if enter_on_next else 0
     
     @property
     def long(self) -> tpSeries:
@@ -294,14 +298,14 @@ class StrategyFrame(ABC):
         """
         
         if type(exit) == tpSeries:
-            idx = exit[prev_idx:].index[1]
-            return exit[idx:].first_valid_index()
+            idx = exit[prev_idx:].index
+            if len(idx) > 0:
+                return exit[idx[1:]].first_valid_index()
+            else:
+                return None
         else: # type(exit) == tpFrame
             idx = exit.iloc[:, 1].loc[lambda s: s == prev_idx]
-            if len(idx.index) > 0:
-                return idx.index[0]
-            else:
-                return None       
+            return idx.index[0] if len(idx.index) > 0 else None
     
     def _combine2(self, enter: tpSeries, exit: Union[tpSeries, tpFrame]) -> tpSeries:
         """
@@ -326,7 +330,7 @@ class StrategyFrame(ABC):
             idx = self._next_index(exit, idx)
             if idx is not None:
                 exPoints.add(idx)
-                idx = enter[idx:].first_valid_index()
+                idx = enter[idx:][self._onNext:].first_valid_index()
     
         result = enter.mask(~enter.index.isin(entPoints), np.NaN)
         result = result.mask(result.index.isin(exPoints - entPoints), signal)
@@ -385,15 +389,15 @@ class StrategyFrame(ABC):
                 idx = self._next_index(exLong, idx)
                 if idx is not None:
                     exLongPoints.add(idx)
-                    idx, in_long = self._find_min(long[idx:].first_valid_index(), 
-                                                  short[idx:].first_valid_index())
+                    idx, in_long = self._find_min(long[idx:][self._onNext:].first_valid_index(), 
+                                                  short[idx:][self._onNext:].first_valid_index())
             else:
                 entShortPoints.add(idx)
                 idx = self._next_index(exShort, idx)
                 if idx is not None:
                     exShortPoints.add(idx)
-                    idx, in_long = self._find_min(long[idx:].first_valid_index(), 
-                                                  short[idx:].first_valid_index())
+                    idx, in_long = self._find_min(long[idx:][self._onNext:].first_valid_index(), 
+                                                  short[idx:][self._onNext:].first_valid_index())
                 
         result = long.mask(~long.index.isin(entLongPoints), np.NaN)
         result = result.mask(result.index.isin(entShortPoints), signal_short)
@@ -435,6 +439,7 @@ class Strategy(Iterable):
 
     def __init__(self, name: str, long: tpPolicy = None, exLong: tpPolicy = None, 
                  short: tpPolicy = None, exShort: tpPolicy = None,
+                 enter_on_next: bool = False,
                  modes: List[Mode] = [MODE_ALL, MODE_LONGS, MODE_SHORTS], 
                  long_params: Dict[str, Any] = {}, 
                  exLong_params: Dict[str, Any] = {}, 
@@ -447,6 +452,8 @@ class Strategy(Iterable):
         exLong - Policy for long exits
         short - Policy for short enters
         exShort - Policy for short exits
+        enter_on_next - if True, cannot enter on the same bar with exit, 
+                        only on the next one
         modes - list of availiable modes (all, longs or shorts only)
         long_params - dict with parameters for `long`
         exLong_params - dict with parameters for `exLong`
@@ -459,6 +466,7 @@ class Strategy(Iterable):
         self._exLong = exLong
         self._short = short
         self._exShort = exShort
+        self._onNext = enter_on_next
         self._long_params = long_params
         self._exLong_params = exLong_params
         self._short_params = short_params
@@ -611,7 +619,8 @@ class Strategy(Iterable):
          1 is for enter long, or keeping long position
         """ 
         
-        frame = StrategyFrame()
+        logging.debug(self)
+        frame = StrategyFrame(enter_on_next = self._onNext)
         
         if self._has_long and (m != MODE_SHORTS):
             if not long_params:
@@ -630,7 +639,7 @@ class Strategy(Iterable):
             
             frame.short = self._short(**short_params) 
             frame.exShort = partial(self._exShort, **exShort_params)
-                         
+                        
         return frame.signal()           
     
     def __str__(self):       
