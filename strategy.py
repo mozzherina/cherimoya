@@ -485,6 +485,12 @@ class Strategy(Iterable):
             # all variations of possible parameters
             self._iter_params = self.product_dict(**self._params)
     
+    def reset(self):
+        """
+        Reset parameters for a new iteration
+        """
+        self._iter_params = self.product_dict(**self._params)
+    
     def _check_properties(self) -> (bool, bool):
         """
         Check if enough properties were specified
