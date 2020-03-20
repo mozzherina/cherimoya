@@ -426,7 +426,7 @@ class StrategyFrame(ABC):
         
         
 @typechecked
-class Strategy(Iterable):
+class Strategy():
     """
     Strategy is a class providing an interface for
     all subsequent (inherited) strategy handling objects.
@@ -438,7 +438,6 @@ class Strategy(Iterable):
     """
 
     def __init__(self, name: str, 
-                 data: tpFrame,
                  long: tpPolicy = None, exLong: tpPolicy = None, 
                  short: tpPolicy = None, exShort: tpPolicy = None,
                  enter_on_next: bool = False,
@@ -450,7 +449,6 @@ class Strategy(Iterable):
         """
         Parameters:
         name - name of the strategy
-        data - DataFrame with bars
         long - Policy for long enters
         exLong - Policy for long exits
         short - Policy for short enters
@@ -465,7 +463,6 @@ class Strategy(Iterable):
         """
         
         self._name = {'Strategy name': name}
-        self._data = data
         self._long = long
         self._exLong = exLong
         self._short = short
@@ -482,14 +479,10 @@ class Strategy(Iterable):
             # set up Policies and returns a dict with all iterable parameters
             self._params = self._set_up_params(modes)
             logging.debug("Number of variable parameters is %s" %len(self._params))
-            # all variations of possible parameters
-            self._iter_params = self.product_dict(**self._params)
-    
-    def reset(self):
-        """
-        Reset parameters for a new iteration
-        """
-        self._iter_params = self.product_dict(**self._params)
+            
+    @property
+    def params(self) -> dict: 
+        return self._params         
     
     def _check_properties(self) -> (bool, bool):
         """
@@ -532,7 +525,9 @@ class Strategy(Iterable):
     
     def _set_up_params(self, modes: List[Mode]) -> dict:
         """
-        Responsible for setting all Policies
+        Responsible for setting all Policies.
+        Apply Policies partially to the non changeable parameters, 
+        set _params dictionaries to the default parameters.
         
         Parameters:
         modes - list of availiable modes (all, longs or shorts only)
@@ -569,7 +564,8 @@ class Strategy(Iterable):
                       dic_strat: str, dic_params: str) -> (partial, dict, dict):
         """
         Set up enter or exit Policy, while parsing parameters and 
-        setting them for iteration or calling
+        setting them for iteration or calling.
+        As a side effect forms Strategy's _name dictionary.
         
         Parameters:
         ls - Policy method, which returns tpSeries or tpFrame
@@ -590,11 +586,11 @@ class Strategy(Iterable):
         basic_params = {} # dict of parameters, that will not change
         
         for k, v in params.items():
-            if (type(v) == list) or (type(v) == range):
-                if type(v) == range: 
-                    v = list(v)
+            if (k == 'prices') or (type(v) == list) or (type(v) == range):
+                if type(v) != list: 
+                    v = list(v) if type(v) == range else [v]
                 iter_params[prefix + k] = v
-                if k in def_dict:
+                if (def_dict is not None) and (k in def_dict):
                     def_params[k] = def_dict[k]
                 else:
                     def_params[k] = v[0]
@@ -604,27 +600,26 @@ class Strategy(Iterable):
         self._name[dic_strat] = str(ls)
         self._name[dic_params] = str(basic_params)
         
-        basic_params = self._update_price(basic_params)
         return partial(ls, **basic_params), def_params, iter_params
     
-    def _update_price(self, params: dict) -> dict:
+    def _set_prices(self, data: tpFrame, params: dict) -> dict:
+        """
+        Set up values for prices parameters from data object.
+        
+        Parameters:
+        data - Dataframe with prices
+        params - Dictionary with parameters
+        
+        Returns:
+        Updated dict with parameters
+        """
+        
         if 'prices' in params:
             name = params['prices']
-            params['prices'] = self._data[name]
+            params['prices'] = data[name]
         return params   
-          
-    def product_dict(self, **kwargs):
-        """
-        Provides iteration over dictionary.
-        Same as itertools.product, but for dictionary, not lists.
-        """
-        
-        keys = kwargs.keys()
-        vals = kwargs.values()
-        for instance in product(*vals):
-            yield dict(zip(keys, instance))
-        
-    def calculate_all(self, m:Mode = MODE_ALL,  
+    
+    def calculate_all(self, data: tpFrame,  m:Mode = MODE_ALL,  
                       long_params: Dict[str, Any] = {}, 
                       exLong_params: Dict[str, Any] = {}, 
                       short_params: Dict[str, Any] = {}, 
@@ -632,9 +627,10 @@ class Strategy(Iterable):
         """
         Provides the mechanisms to calculate all signals at once 
         for the historic data.
+        Mostly is responsible for properly setting up StrategyFrame.
         
         Parameters:
-        
+        data - Dataframe with prices for Strategy application
         m - Mode: all, shorts or longs only
         long_params - parameters for long Policy, if not using defaults
         exLong_params - parameters for exLong Policy, if not using defaults
@@ -661,12 +657,12 @@ class Strategy(Iterable):
                 
             if long_params:
                 name[STR_LPAR] = '{}'.format(long_params)
-                long_params = self._update_price(long_params)
+                long_params = self._set_prices(data, long_params)
             frame.long = self._long(**long_params)
             
             if exLong_params:
                 name[STR_ELPAR] = '{}'.format(exLong_params)
-                exLong_params = self._update_price(exLong_params)
+                exLong_params = self._set_prices(data, exLong_params)
             frame.exLong = partial(self._exLong, **exLong_params)         
                         
         if self._has_short and (m != MODE_LONGS):
@@ -677,15 +673,34 @@ class Strategy(Iterable):
             
             if short_params:
                 name[STR_SPAR] = '{}'.format(short_params)
-                short_params = self._update_price(short_params)
+                short_params = self._set_prices(data, short_params)
             frame.short = self._short(**short_params) 
             
             if exShort_params:
                 name[STR_ESPAR] = '{}'.format(exShort_params)
-                exShort_params = self._update_price(exShort_params)
+                exShort_params = self._set_prices(data, exShort_params)
             frame.exShort = partial(self._exShort, **exShort_params)
                         
-        return self._dict_format(name), frame.signal()               
+        return self._dict_format(name), frame.signal()    
+    
+    def calculate_fromDict(self, data: tpFrame, params: dict) -> (str, tpSeries):
+        """
+        Runs calculate_all function, builds parameters from 
+        the given dictionary, in which keys start with 
+        LONG_PREFIX, ..., EXSHORT_PREFIX.
+        
+        Parameters: 
+        data - Dataframe with prices for Strategy application
+        params - dict with the given parameters
+        
+        Returns:
+        Same as calculate_all function
+        """
+        return self.calculate_all(data = data, m = params['modes'],  
+                  long_params = {k[PREFIX_LEN:]:v for (k, v) in params.items() if k.startswith(LONG_PREFIX)}, 
+                  exLong_params = {k[PREFIX_LEN:]:v for (k, v) in params.items() if k.startswith(EXLONG_PREFIX)}, 
+                  short_params = {k[PREFIX_LEN:]:v for (k, v) in params.items() if k.startswith(SHORT_PREFIX)}, 
+                  exShort_params = {k[PREFIX_LEN:]:v for (k, v) in params.items() if k.startswith(EXSHORT_PREFIX)})
     
     def _dict_format(self, name: dict) -> str:
         s = []
@@ -696,13 +711,34 @@ class Strategy(Iterable):
     def __str__(self):    
         return self._dict_format(self._name)
     
+
+@typechecked
+class StrategyIterator(Iterable):
+    
+    def __init__(self, strategy: Strategy) -> None:
+        self._params = strategy.params
+        self._iter = self._product_dict(**self._params)
+    
+    def reset(self):
+        """
+        Reset parameters for a new iteration
+        """
+        
+        self._iter = self._product_dict(**self._params)
+    
+    def _product_dict(self, **kwargs):
+        """
+        Provides iteration over dictionary.
+        Same as itertools.product, but for dictionary, not lists.
+        """
+        
+        keys = kwargs.keys()
+        vals = kwargs.values()
+        for instance in product(*vals):
+            yield dict(zip(keys, instance))
+            
     def __iter__(self):
         return self   
                                
     def __next__(self):
-        value = next(self._iter_params)
-        return self.calculate_all(m = value['modes'],  
-                  long_params = {k[PREFIX_LEN:]:v for (k, v) in value.items() if k.startswith(LONG_PREFIX)}, 
-                  exLong_params = {k[PREFIX_LEN:]:v for (k, v) in value.items() if k.startswith(EXLONG_PREFIX)}, 
-                  short_params = {k[PREFIX_LEN:]:v for (k, v) in value.items() if k.startswith(SHORT_PREFIX)}, 
-                  exShort_params = {k[PREFIX_LEN:]:v for (k, v) in value.items() if k.startswith(EXSHORT_PREFIX)})
+        return next(self._iter)
