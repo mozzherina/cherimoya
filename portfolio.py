@@ -110,8 +110,23 @@ class NaivePortfolio(Portfolio):
         self.positions = {} # (symbol, strategy) -> DataFrame during time
         self.trades = {} # (symbol, strategy) -> DataFrame of trades, summary
         self.metrics = {} # (symbol, strategy) -> DataFrame of calculated metrics
+        
+        # if in event mode, prepare dataframes for positions and trades
+        '''
+        if events is not None:
+            if symbols is None: 
+                self.symbols = self.bars.symbol_data.keys()
+            for s in self.symbols:
+                self.positions[(s, self.strategy_name)] = self._create_positions_df(s)
+                self.trades[(s, self.strategy_name)] = pd.DataFrame(columns=['entry_date'])
+                self.trades[(s, self.strategy_name)].set_index('entry_date', inplace = True)
+        '''
     
-    def apply_strategy(self, data: tpFrame, name: str, signal: tpSeries) -> (str, tpFrame):
+    @staticmethod
+    def apply_strategy(data: tpFrame, name: str, signal: tpSeries, 
+                       capital:float = 10000.0, quantity:int = 1, 
+                       calc_fee:bool = False, 
+                       fees:dict = {'base':0.000354, 'min':0.5}) -> (str, tpFrame):
         """
         Function is responsible for applying given strategy and calculating 
         dataframe with results
@@ -120,6 +135,10 @@ class NaivePortfolio(Portfolio):
         data - Dataframe with prices for Strategy application
         name - short name of the Strategy (for current signal)
         signal - signal of the Strategy
+        capital - The starting capital in USD for each ticker.
+        quantity - The number of shares to buy/sell. Should be > 0.
+        calc_fee - Whether or not fee is calculated.
+        fees - Dictionary for fees calculations (base, min)
         
         Returns:
         Dataframe with results
@@ -129,9 +148,9 @@ class NaivePortfolio(Portfolio):
         df['signal'] = signal
         # make continuous signal: 1, 1, 1, 0, 0, 0 - without NaNs
         df['signal'].fillna(method='pad', inplace=True)
-        if self._quantity == 0:
+        if quantity <= 0:
             logging.debug("Can not go for max sum in vector mode, let quantity = 1")
-        quantity = self._quantity if self._quantity > 0 else 1
+            quantity = 1
         # volume of the position, + for long, - for short
         df['position'] = quantity * df.signal.shift()
         df['position'].fillna(0, inplace=True)
@@ -160,10 +179,10 @@ class NaivePortfolio(Portfolio):
         df['close_trade'].fillna(0, inplace=True)
         # fees calculations
         df['fee'] = 0.0
-        if self._calc_fee:
-            df.loc[df.bars == 1, 'fee'] = np.maximum(df.open_long * self._fees['base'], self._fees['min'])
-            df.loc[df.bars == -1, 'fee'] = np.maximum(abs(df.open_short) * self._fees['base'], self._fees['min'])
-            df.loc[df.close_trade != 0, 'fee'] += np.maximum(abs(df.close_trade) * self._fees['base'], self._fees['min'])
+        if calc_fee:
+            df.loc[df.bars == 1, 'fee'] = np.maximum(df.open_long * fees['base'], fees['min'])
+            df.loc[df.bars == -1, 'fee'] = np.maximum(abs(df.open_short) * fees['base'], fees['min'])
+            df.loc[df.close_trade != 0, 'fee'] += np.maximum(abs(df.close_trade) * fees['base'], fees['min'])
         df['fee_total'] = df.fee.cumsum()
         # profit calculations
         df['profit'] = 0.0
@@ -175,12 +194,13 @@ class NaivePortfolio(Portfolio):
         df.loc[df.close_trade < 0, 'profit_fix'] = df.close_trade - df.open_short
         df['profit_total'] = df.profit_fix.cumsum()
         # total capital and equity calculations
-        df['total'] = self._capital - df.fee_total + df.profit_total
+        df['total'] = capital - df.fee_total + df.profit_total
         df['equity'] = df.total + df.profit - df.profit_fix
         #df = df.apply(pd.to_numeric, downcast='float')
         return name, df
 
-    def get_trades(self, origin: tpFrame, file:str = None) -> tpFrame:
+    @staticmethod
+    def get_trades(origin: tpFrame, file:str = None) -> tpFrame:
         """
         Function is responsible for extracting trades from the given  
         dataframe in the WealthLab format
@@ -227,8 +247,9 @@ class NaivePortfolio(Portfolio):
             df.to_csv(file)    
         return df
         
-    def get_metrics(self, origin:tpFrame, strategy_name: str, 
-                    trades: tpFrame = None, metrics: tpFrame = None, 
+    @staticmethod
+    def get_metrics(origin:tpFrame, strategy_name: str, 
+                    trades: tpFrame, metrics: tpFrame = None, 
                     file:str = None) -> tpFrame:
         """
         Function is responsible for calculating metrics, e.g. Profit factor
@@ -248,7 +269,7 @@ class NaivePortfolio(Portfolio):
             metrics = pd.DataFrame(columns = ['Feature', strategy_name])
             metrics.set_index('Feature', inplace = True)
         
-        tr_copy = self.get_trades(origin = origin) if trades is None else trades.copy()
+        tr_copy = trades.copy()
         if (pd.isnull(tr_copy.exit_date[-1])): 
             tr_copy.iloc[-1, tr_copy.columns.get_loc('exit_date')] = origin.index[-1]
             tr_copy.iloc[-1, tr_copy.columns.get_loc('exit_price')] = origin.close[-1]
@@ -292,9 +313,15 @@ class NaivePortfolio(Portfolio):
         metrics.loc['Maximum Drawdown', strategy_name] = np.around(drawdown.max(), decimals = 2)
         metrics.loc['Maximum Drawdown Date', strategy_name] = drawdown.idxmax()
             
-        metrics.loc['Profit Factor', strategy_name] = np.around(metrics.loc['Gross Profit', strategy_name] / np.absolute(metrics.loc['Gross Loss', strategy_name]), decimals = 2)
-        metrics.loc['Recovery Factor', strategy_name] = np.around(metrics.loc['Net Profit', strategy_name] / np.absolute(drawdown.max()), decimals = 2)
-        metrics.loc['Payoff Ratio', strategy_name] = np.around(metrics.loc['Avg Profit', strategy_name] / np.absolute(metrics.loc['Avg Loss', strategy_name]), decimals = 2)
+        metrics.loc['Profit Factor', strategy_name] = np.around(
+            metrics.loc['Gross Profit', strategy_name] / np.absolute(metrics.loc['Gross Loss', strategy_name]), 
+            decimals = 2)
+        metrics.loc['Recovery Factor', strategy_name] = np.around(
+            metrics.loc['Net Profit', strategy_name] / np.absolute(drawdown.max()), 
+            decimals = 2)
+        metrics.loc['Payoff Ratio', strategy_name] = np.around(
+            metrics.loc['Avg Profit', strategy_name] / np.absolute(metrics.loc['Avg Loss', strategy_name]), 
+            decimals = 2)
         
         if file is not None:
             metrics.to_csv(file)    

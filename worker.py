@@ -2,13 +2,10 @@ import strategy as s
 import portfolio as p
 
 from constants import *
-
-def mycalc(data: tpFrame, strat: s.Strategy, params:dict):
-    return params
     
-def calc_all(data: tpFrame, strat: s.Strategy, params: dict):
+def calculate_all(data: tpFrame, strat: s.Strategy, params: dict):
     name, res = strat.calculate_fromDict(data, params)
-    return name, res
-
-#port.apply_strategy(data, *
-#return port.get_metrics(res, name)
+    name, res = p.NaivePortfolio.apply_strategy(data, name, res)
+    trades = p.NaivePortfolio.get_trades(origin = res)
+    metrics = p.NaivePortfolio.get_metrics(res, name, trades)
+    return name, metrics

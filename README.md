@@ -5,8 +5,8 @@ Cherimoya is an AlgoTrading library. The main goal of the project is to provide 
 Project features:
 1. Importing, resampling, and viewing data. As a sources .csv files are used. 
 2. Writing strategies, and backtesting them in a vector mode.
-3*. Applying strategies, calculating basic metrics (Portfolio).
-4*. Optimizing strategy over paramaters.
+3. Applying strategies, calculating basic metrics (Portfolio).
+4. Optimizing strategy over paramaters.
 5*. Modeling portfolio in an event-driven mode.
 6*. Fitting strategy to a ticker using meta-strategy approach.
 
